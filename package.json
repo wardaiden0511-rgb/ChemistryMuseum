@@ -1,0 +1,31 @@
+{
+  "name": "chemistry-behind-everyday-life",
+  "version": "1.0.0",
+  "private": true,
+  "description": "An offline interactive museum of everyday chemistry.",
+  "author": "Everyday Chemistry Museum",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "start": "npm run build && electron .",
+    "test": "node --test tests/chemistry.test.js",
+    "test:ui": "playwright test",
+    "test:desktop": "node scripts/smoke-desktop.mjs",
+    "assets": "node scripts/make-icons.mjs",
+    "package:windows": "npm run build && npm run assets && electron-builder --win --dir",
+    "package:mac": "npm run build && npm run assets && electron-builder --mac --universal --publish never"
+  },
+  "devDependencies": {
+    "@fontsource/dm-sans": "5.3.0",
+    "@fontsource/manrope": "5.3.0",
+    "@playwright/test": "1.63.0",
+    "electron": "44.4.3",
+    "electron-builder": "26.15.3",
+    "prettier": "3.9.8",
+    "sharp": "0.35.4",
+    "vite": "8.3.0"
+  }
+}

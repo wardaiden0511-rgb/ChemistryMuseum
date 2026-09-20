@@ -1,0 +1,89 @@
+name: Build Mac installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      signed:
+        description: 'Sign and notarize with your Apple Developer credentials'
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Universal MacBook installer
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Verify chemistry
+        run: npm test
+      - name: Install test browser
+        run: npx playwright install chromium
+      - name: Test all museum interactions
+        run: npm run test:ui
+      - name: Check signing credentials
+        if: inputs.signed
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for variable in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [[ -z "${!variable}" ]]; then
+              echo "::error::Missing required repository secret: $variable"
+              exit 1
+            fi
+          done
+        shell: bash
+      - name: Build signed and notarized DMG
+        if: inputs.signed
+        run: npm run package:mac -- --config.forceCodeSigning=true
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Build personal-sharing DMG
+        if: ${{ !inputs.signed }}
+        run: npm run package:mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify universal binary and disk image
+        run: |
+          APP="release/mac-universal/The Chemistry Behind Everyday Life.app"
+          lipo -verify_arch arm64 x86_64 "$APP/Contents/MacOS/The Chemistry Behind Everyday Life"
+          codesign --verify --deep --strict "$APP"
+          hdiutil verify release/*.dmg
+      - name: Smoke-test the packaged Mac app offline
+        run: npm run test:desktop
+        env:
+          DESKTOP_EXECUTABLE: release/mac-universal/The Chemistry Behind Everyday Life.app/Contents/MacOS/The Chemistry Behind Everyday Life
+      - name: Validate notarization ticket
+        if: inputs.signed
+        run: |
+          xcrun stapler validate "release/mac-universal/The Chemistry Behind Everyday Life.app"
+          spctl --assess --type execute --verbose=2 "release/mac-universal/The Chemistry Behind Everyday Life.app"
+      - name: Installer checksum
+        run: cd release && shasum -a 256 *.dmg > SHA256SUMS.txt
+      - name: Upload the shareable installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Chemistry-Museum-Mac-${{ inputs.signed && 'notarized' || 'unnotarized' }}
+          path: |
+            release/*.dmg
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
